@@ -7,7 +7,7 @@ cp /tmp/main.dart lib/main.dart
 rm -rf test
 flutter pub add just_audio:^0.9.40 just_audio_background file_picker:^8.0.0 path_provider shared_preferences audio_metadata_reader
 python3 - <<'PY'
-import re, glob, pathlib
+import re, glob, os, pathlib
 m = pathlib.Path('android/app/src/main/AndroidManifest.xml')
 s = m.read_text()
 perms = '''<uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -31,4 +31,24 @@ for f in glob.glob('android/app/src/main/kotlin/**/MainActivity.kt', recursive=T
     p = pathlib.Path(f)
     pkg = re.search(r'package\s+(\S+)', p.read_text()).group(1)
     p.write_text(f'package {pkg}\n\nimport com.ryanheise.audioservice.AudioServiceActivity\n\nclass MainActivity : AudioServiceActivity()\n')
+
+# Força todos os módulos a compilar com Android SDK 36
+kts = pathlib.Path('android/build.gradle.kts')
+gr = pathlib.Path('android/build.gradle')
+if kts.exists():
+    kts.write_text('''subprojects {
+    afterEvaluate {
+        (extensions.findByName("android") as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(36)
+    }
+}
+
+''' + kts.read_text())
+elif gr.exists():
+    gr.write_text('''subprojects {
+    afterEvaluate { p ->
+        if (p.hasProperty('android')) { p.android { compileSdkVersion 36 } }
+    }
+}
+
+''' + gr.read_text())
 PY
