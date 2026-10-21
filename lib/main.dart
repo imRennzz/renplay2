@@ -13,14 +13,27 @@ final player = AudioPlayer();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.renplay.audio',
-    androidNotificationChannelName: 'Renplay',
-    androidNotificationOngoing: true,
-  );
   final lib = Lib();
-  await lib.load();
-  runApp(RenplayApp(lib));
+  runApp(RenplayApp(lib, boot(lib)));
+}
+
+Future<String?> boot(Lib lib) async {
+  String? err;
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.renplay.audio',
+      androidNotificationChannelName: 'Renplay',
+      androidNotificationOngoing: true,
+    ).timeout(const Duration(seconds: 8));
+  } catch (e) {
+    err = 'Segundo plano indisponível: $e';
+  }
+  try {
+    await lib.load();
+  } catch (e) {
+    err = '${err ?? ''}\nBiblioteca: $e';
+  }
+  return err;
 }
 
 class Track {
@@ -122,7 +135,8 @@ Widget artW(Track? t, double? size) => t?.art != null
 
 class RenplayApp extends StatelessWidget {
   final Lib lib;
-  const RenplayApp(this.lib, {super.key});
+  final Future<String?> ready;
+  const RenplayApp(this.lib, this.ready, {super.key});
   @override
   Widget build(BuildContext context) {
     ThemeData th(Brightness b) => ThemeData(
@@ -133,7 +147,12 @@ class RenplayApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: th(Brightness.light),
       darkTheme: th(Brightness.dark),
-      home: Home(lib),
+      home: FutureBuilder<String?>(
+        future: ready,
+        builder: (c, s) => s.connectionState == ConnectionState.done
+            ? Home(lib, warning: s.data)
+            : const Scaffold(body: Center(child: CircularProgressIndicator())),
+      ),
     );
   }
 }
@@ -198,7 +217,8 @@ void trackMenu(BuildContext context, Lib lib, Track? t) {
 
 class Home extends StatelessWidget {
   final Lib lib;
-  const Home(this.lib, {super.key});
+  final String? warning;
+  const Home(this.lib, {this.warning, super.key});
 
   void openPlayer(BuildContext context) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerPage(lib)));
@@ -214,6 +234,13 @@ class Home extends StatelessWidget {
               actions: [TextButton.icon(onPressed: lib.add, icon: const Icon(Icons.add), label: const Text('Adicionar'))],
             ),
             body: Column(children: [
+              if (warning != null)
+                Container(
+                  width: double.infinity,
+                  color: Colors.red.withOpacity(0.15),
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(warning!, style: const TextStyle(fontSize: 12)),
+                ),
               SizedBox(
                 height: 48,
                 child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
