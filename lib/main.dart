@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 final player = AudioPlayer();
 
@@ -54,18 +53,24 @@ class Lib extends ChangeNotifier {
       ? tracks
       : [for (final id in lists[cur] ?? <String>[]) ...tracks.where((t) => t.id == id)];
 
+  Future<File> get _db async =>
+      File('${(await getApplicationDocumentsDirectory()).path}/library.json');
+
   Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
     try {
-      tracks = (jsonDecode(p.getString('tracks') ?? '[]') as List).map((e) => Track.fromJson(e)).toList();
-      lists = (jsonDecode(p.getString('lists') ?? '{}') as Map).map((k, v) => MapEntry(k as String, List<String>.from(v)));
+      final f = await _db;
+      if (await f.exists()) {
+        final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+        tracks = (j['tracks'] as List).map((e) => Track.fromJson(e)).toList();
+        lists = (j['lists'] as Map).map((k, v) => MapEntry(k as String, List<String>.from(v)));
+      }
     } catch (_) {}
   }
 
   Future<void> save() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString('tracks', jsonEncode(tracks));
-    await p.setString('lists', jsonEncode(lists));
+    try {
+      await (await _db).writeAsString(jsonEncode({'tracks': tracks, 'lists': lists}));
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -86,8 +91,11 @@ class Lib extends ChangeNotifier {
       String? art;
       try {
         final m = readMetadata(File(dest), getImage: true);
-        if ((m.title ?? '').isNotEmpty) title = m.title!;
-        artist = m.artist ?? '';
+        final asian = RegExp(r'[\u3040-\u9FFF\uAC00-\uD7AF\uFFFD]');
+        final fileAsian = asian.hasMatch(title);
+        bool ok(String? v) => v != null && v.isNotEmpty && (fileAsian || !asian.hasMatch(v));
+        if (ok(m.title)) title = m.title!;
+        if (ok(m.artist)) artist = m.artist!;
         if (m.pictures.isNotEmpty) {
           art = '$dir/$id.img';
           await File(art).writeAsBytes(m.pictures.first.bytes);
